@@ -1,46 +1,53 @@
-import torch
+"""
+Transformer-based encoder model with positional encoding.
+
+This module defines:
+- Encoder: A single Transformer encoder block with self-attention and feedforward layers.
+- PositionalEncoding: A sinusoidal positional encoding module.
+- FullModel: A complete model combining embedding, positional encoding, multiple encoders, 
+  and a feedforward classifier head.
+"""
+
 from torch import nn, Tensor, no_grad, ones, arange, sin, cos
 
 
 class Encoder(nn.Module):
-  def __init__(self, d_model: int = 300, num_heads: int = 5, embedding_size: int = 300):
-    """
-    Initializes the model with multi-head attention, layer normalization, and feed-forward layers.
-    Args:
-      d_model (int, optional): The dimension of the model and input to the attention mechanism. Defaults to 300.
-      num_heads (int, optional): Number of attention heads in the multi-head attention layer. Defaults to 5.
-      embedding_size (int, optional): Size of the input embeddings. Defaults to 300.
-    Attributes:
-      embedding_size (int): Stores the embedding size.
-      attention (nn.MultiheadAttention): Multi-head attention layer.
-      ln1 (nn.LayerNorm): First layer normalization applied to the input.
-      ff1 (nn.Linear): First feed-forward linear layer expanding the dimension.
-      relu (nn.ReLU): ReLU activation function.
-      ff2 (nn.Linear): Second feed-forward linear layer reducing the dimension.
-      ln2 (nn.LayerNorm): Second layer normalization applied after feed-forward layers.
-    """
+  """
+  Transformer encoder block with self-attention and feedforward layers.
 
-    # ln - LinearNorm
-    # ff - Feed Forward (Linear)
+  Args:
+    d_model (int): Dimensionality of the model embeddings.
+    num_heads (int): Number of attention heads.
+  """
+  def __init__(self, d_model: int = 300, num_heads: int = 5):
     super().__init__()
-    self.embedding_size = embedding_size
-
+    self.ln1 = nn.LayerNorm(d_model)
     self.attention = nn.MultiheadAttention(d_model, num_heads, batch_first=True)
-    self.ln1 = nn.LayerNorm(embedding_size)
     self.ff1 = nn.Linear(d_model, d_model * 4)
-    self.relu = nn.ReLU()
+    self.gelu = nn.GELU()
     self.ff2 = nn.Linear(d_model * 4, d_model)
-    self.ln2 = nn.LayerNorm(embedding_size)
+    self.ln2 = nn.LayerNorm(d_model)
 
 
-  def forward(self, X: Tensor):
+  def forward(self, X: Tensor) -> Tensor:
+    """
+    Forward pass of the encoder block.
+
+    Args:
+      x (Tensor): Input tensor of shape (batch_size, seq_len, d_model).
+
+    Returns:
+      Tensor: Output tensor of shape (batch_size, seq_len, d_model).
+    """
     # Self-Attention + residual
-    attention_out, _ = self.attention(X, X, X)
-    out1 = self.ln1(X + attention_out)
+    ln_X = self.ln1(X)
+    attention_out, _ = self.attention(ln_X, ln_X, ln_X)
+    out1 = X + attention_out
 
     # FeedForward + residual
-    linear_result = self.ff2(self.relu(self.ff1(out1)))
-    out2 = self.ln2(out1 + linear_result)
+    out1_ln = self.ln2(out1)
+    linear_result = self.ff2(self.gelu(self.ff1(out1_ln)))
+    out2 = out1 + linear_result
 
     return out2
   
@@ -48,23 +55,31 @@ class Encoder(nn.Module):
 # TODO: what, if we would calculate pe in init?
 class PositionalEncoding(nn.Module):
   """
-  PositionalEncoding module for adding positional information to input tensors.
-  This module generates sinusoidal positional encodings as described in the "Attention is All You Need" paper.
-  The positional encodings are computed using sine and cosine functions of different frequencies and are
-  multiplied element-wise with the input tensor.
+  Sinusoidal positional encoding.
+
+  Adds positional information to the embeddings using sine and cosine 
+  functions, as described in "Attention Is All You Need".
   """
 
   def __init__(self):
     super().__init__()
   
   def forward(self, X: Tensor) -> Tensor:
-    # batch, pos, i
+    """
+    Forward pass for positional encoding.
+
+    Args:
+      x (Tensor): Input tensor of shape (batch_size, seq_len, d_model).
+
+    Returns:
+      Tensor: Positionally encoded tensor of the same shape.
+    """
+    
     with no_grad():
       max_pos = X.shape[1]
       max_i   = X.shape[2]
 
       a = ones(max_pos, max_i)
-
       pos = arange(max_pos).unsqueeze(1) * a
 
       i = arange(max_i)
@@ -79,12 +94,42 @@ class PositionalEncoding(nn.Module):
   
 
 class FullModel(nn.Module):
-  def __init__(self, encoder_count: int = 5, d_model: int = 300, num_heads: int = 5):
+  """
+  Full Transformer-like model with embedding, positional encoding,
+  stacked encoders, and a feedforward classification head.
+
+  Args:
+    encoder_count (int): Number of encoder blocks.
+    d_model (int): Dimensionality of embeddings.
+    num_heads (int): Number of attention heads.
+    num_embeddings (int): Number of embeddings.
+  """
+  def __init__(self, encoder_count: int = 5, d_model: int = 300, num_heads: int = 5, num_embeddings: int = 32_100):
     super().__init__()
     
+    self.embedding = nn.Embedding(num_embeddings, 300)
     self.pe = PositionalEncoding()
-    self.encoders = nn.Sequential(*[Encoder(d_model=d_model, num_heads=num_heads) for _ in range(encoder_count)])
-    self.model = nn.Sequential(self.pe, self.encoders)
+    self.encoders = nn.Sequential(
+      *[Encoder(d_model=d_model, num_heads=num_heads) for _ in range(encoder_count)]
+    )
+    self.ln1 = nn.Linear(300,200)
+    self.relu = nn.ReLU()
+    self.ln2 = nn.Linear(200, 1)
   
   def forward(self, X: Tensor) -> Tensor:
-    return self.model.forward(X)
+    """
+    Forward pass of the full model.
+
+    Args:
+      x (Tensor): Input tensor of token IDs (batch_size, seq_len).
+
+    Returns:
+      Tensor: Logits tensor of shape (batch_size, 1).
+    """
+    emb = self.embedding(X)
+    pe = self.pe(emb)
+    enc_res = self.encoders(pe)
+
+    logits = self.relu(self.ln1(enc_res[:,0,:])) # CLS pooling
+    logits = self.ln2(logits)
+    return logits
