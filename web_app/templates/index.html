@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI vs Human Detector</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>AI vs Human Detector</h1>
+    <p class="subtitle">Enter a text and find out if it was written by AI or a human.</p>
+
+    <div class="card">
+      <textarea id="inputText" placeholder="Type your text here..."></textarea>
+      <button onclick="sendText()">Check</button>
+    </div>
+
+    <div id="result" class="result hidden"></div>
+  </div>
+
+  <script>
+    async function sendText() {
+      const text = document.getElementById("inputText").value;
+      if (!text) {
+        alert("Please enter some text first.");
+        return;
+      }
+
+      const response = await fetch("/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text })
+      });
+
+      const data = await response.json();
+      const resultDiv = document.getElementById("result");
+      resultDiv.classList.remove("hidden");
+      resultDiv.innerHTML = `
+        <h2>Result</h2>
+        <p><b>AI Probability:</b> ${(data.prediction * 100).toFixed(2)}%</p>
+        <p><b>Human Probability:</b> ${((1 - data.prediction) * 100).toFixed(2)}%</p>
+      `;
+    }
+  </script>
+</body>
+</html>
