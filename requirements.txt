@@ -1,0 +1,5 @@
+torch==2.6.0
+uvicorn==0.35.0
+fastapi==0.116.1
+kagglehub==0.3.12
+transformers==4.55.3
