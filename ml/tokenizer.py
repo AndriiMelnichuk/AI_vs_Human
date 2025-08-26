@@ -8,7 +8,7 @@ with proper padding.
 """
 
 from transformers import AutoTokenizer
-from torch import Tensor
+from torch import Tensor, tensor
 from torch.nn.utils.rnn import pad_sequence
 
 
@@ -21,35 +21,29 @@ class Tokenizer:
       Defaults to "t5-small".
   """
   def __init__(self, tokenizer_name: str = 't5-small'):
-    self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    self.__tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
 
-  def tokenize_text(self, text: str) -> Tensor:
+  def tokenize(self, text: str | list[str]) -> Tensor:
     """
-    Tokenize a single text string into a tensor of token IDs.
+    Tokenize text or a list of texts into a padded tensor of token IDs.
+
+    If a single string is given, returns a tensor of shape [1, seq_len].
+    If a list of strings is given, returns a tensor of shape [batch_size, max_seq_len],
+    where sequences are padded to the same length.
 
     Args:
-      text (str): Input text.
+        text (str | list[str]): Input text or list of texts.
 
     Returns:
-      Tensor: Tensor containing token IDs.
+        Tensor: A tensor containing token IDs (batch_first).
     """
-    return self.tokenizer.encode(text)
-
-
-  def tokenize_texts(self, texts: list[str]) -> Tensor:
-    """
-    Tokenize a list of text strings and pad them to equal length.
-
-    Args:
-      texts (List[str]): List of input texts.
-
-    Returns:
-      Tensor: Padded tensor of token IDs with shape (batch_size, seq_len).
-    """
-    tokenized_texts = [self.tokenize_text(text) for text in texts]
-    return pad_sequence(tokenized_texts, batch_first=True)
-
+    if isinstance(text, str):
+      text = '<extra_id_0>' + text
+      return tensor(self.__tokenizer.encode(text)).unsqueeze(0)
+    else:
+      tokenized_texts = [self.tokenize(t).squeeze(0) for t in text]
+      return pad_sequence(tokenized_texts, batch_first=True)
 
   def vocab_len(self):
     """
@@ -58,5 +52,5 @@ class Tokenizer:
     Returns:
       int: Vocabulary size.
     """
-    return len(self.tokenizer.vocab)
+    return len(self.__tokenizer.vocab)
 

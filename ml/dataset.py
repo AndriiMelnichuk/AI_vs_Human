@@ -45,7 +45,7 @@ class CustomDataset(Dataset):
         - Tensor with tokenized text.
         - Tensor with the corresponding target.
     """
-    tokens = self.tokenizer.tokenize_text('<extra_id_0> ' + self.text.iloc[index])
+    tokens = self.tokenizer.tokenize(self.text.iloc[index])
     X = torch.tensor(tokens)
     y = torch.tensor(self.target.iloc[index])
 
